@@ -54,6 +54,7 @@ __global__ void elementwise_add_float4(float* a, float* b, float* c, int N) {
 int main() {
     // constexpr 编译期常量关键字（比const更强）
     constexpr int N = 7;
+    // CPU端分配变量和初始化
     float* a_h = (float*)malloc(N * sizeof(float));
     float* b_h = (float*)malloc(N * sizeof(float));
     float* c_h = (float*)malloc(N * sizeof(float));
@@ -65,6 +66,42 @@ int main() {
     float* a_d = nullptr;
     float* b_d = nullptr;
     float* c_d = nullptr;
-
+    // 调用 cudaMalloc 在 GPU 上分配内存
+    // 把返回的错误码交给 cudaCheck 检查
+    // 把分配到的 GPU 地址写入 a_d
+    cudaCheck(cudaMalloc((void**)&a_d, N * sizeof(float)));
+    cudaCheck(cudaMalloc((void**)&b_d, N * sizeof(float)));
+    cudaCheck(cudaMalloc((void**)&c_d, N * sizeof(float)));
+    // Host: CPU; Device: GPU;
+    // 把 CPU 内存里的数组 b_h 拷贝到 GPU 内存 b_d，并检查是否拷贝成功。
+    cudaCheck(cudaMemcpy(a_d, a_h, N * sizeof(float), cudaMemcpyHostToDevice));
+    cudaCheck(cudaMemcpy(b_d, b_h, N * sizeof(float), cudaMemcpyHostToDevice));
     
+    // 每个block启动1024个线程，1024是CUDA允许的最大线程数。
+    int block_size = 1024; 
+    // 计算需要多少个 block 才能让所有线程覆盖 N 个 float（每线程处理 4 个 float）
+    int grid_size = CEIL(CEIL(N,4), 1024);
+    // <<< >>> 是 CUDA 的 kernel 启动语法
+    // grid_size = block 数量
+    // block_size = 每个 block 的线程数
+    // 括号里的参数传给 GPU kernel
+    elementwise_add_float4<<<grid_size, block_size>>>(a_d, b_d, c_d, N);
+    cudaCheck(cudaMemcpy(c_h, c_d, N * sizeof(float), cudaMemcpyDeviceToHost));
+    // 打印CPU端的结果进行check
+    printf("a_h:\n");
+    for (int i = 0; i < N; i++ ) {
+        if (i == N-1) printf("%f\n", a_h[i]);
+        else printf("%f ", a_h[i]);
+    }
+    printf("b_h:\n");
+    for (int i = 0; i < N; i++ ) {
+        if (i == N-1) printf("%f\n", b_h[i]);
+        else printf("%f ", b_h[i]);
+    }
+    printf("c_h:\n");
+    for (int i = 0; i < N; i++ ) {
+        if (i == N-1) printf("%f\n", c_h[i]);
+        else printf("%f ", c_h[i]);
+    }
+    return 0;
 }
